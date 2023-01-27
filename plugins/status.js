@@ -46,7 +46,7 @@ module.exports = function(req, res, next) {
 
     run(['git', '-c', 'color.status=always', 'status', '-sb'], cwd, req.done);
   } else {
-    var task = exec('git status --branch --porcelain ', {
+    var task = exec('git status --branch --porcelain && git stash list', {
         cwd: cwd,
         maxBuffer: 1024 * 1024 // 1Mb
       }, function(err, stdout, stderr) {
@@ -56,11 +56,15 @@ module.exports = function(req, res, next) {
 
         //remove the branch info so it isn't counted as a change
         var branchInfo = lines.shift();
+        var stashes = lines.filter( function(line) {
+            return line.match(/^stash@.*/)
+        });
 
         // parse
         var behind = (branchInfo || '').match(/(\[.+\])/g) || '',
-            modified = (lines.length > 0 ?
-              lines.length + ' modified' :
+            stashed = (stashes.length > 0 ? stashes.length + ' stashes' : '')
+            modified = (lines.length-stashes.length > 0 ?
+              lines.length-stashes.length + ' modified' :
               'Clean'
             );
 
@@ -70,8 +74,9 @@ module.exports = function(req, res, next) {
           style(dirname, 'gray') +
           style(path.basename(cwd), 'white') + pad(dirname + path.basename(cwd), pathMaxLen) + ' ' +
           branchName + pad(branchName, 15) + ' ' +
-          style(modified, (lines.length > 0 ? 'red' : 'green')) + pad(modified, 14) +
+          style(modified, (lines.length-stashes.length > 0 ? 'red' : 'green')) + pad(modified, 14) +
           behind + pad(behind, 14) +
+          style(stashed, (stashes.length > 0 ? 'red' : 'green')) + pad(stashed, 14) +
           tags.map(function(s) { return '@' + s; }).join(' ')
         );
         if (err !== null) {
