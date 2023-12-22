@@ -46,35 +46,43 @@ module.exports = function(req, res, next) {
 
     run(['git', '-c', 'color.status=always', 'status', '-sb'], cwd, req.done);
   } else {
-    var task = exec('git status --branch --porcelain && git stash list', {
+    var task = exec('git status --branch --porcelain && echo "---" && git stash list && echo "---" && git status', {
         cwd: cwd,
         maxBuffer: 1024 * 1024 // 1Mb
       }, function(err, stdout, stderr) {
-        var lines = stdout.split('\n').filter(function(line) {
+        var rawLines = stdout.split('\n').filter(function(line) {
           return !!line.trim();
         });
 
+        var outputs = divideArrays(rawLines);
+        var lines = outputs[0]; // status
+
         //remove the branch info so it isn't counted as a change
         var branchInfo = lines.shift();
-        var stashes = lines.filter( function(line) {
+
+        // process stashes
+        var stashes = outputs[1].filter( function(line) {
             return line.match(/^stash@.*/)
         });
 
         // parse
         var behind = (branchInfo || '').match(/(\[.+\])/g) || '',
             stashed = (stashes.length > 0 ? stashes.length + ' stashes' : '')
-            modified = (lines.length-stashes.length > 0 ?
-              lines.length-stashes.length + ' modified' :
+            modified = (lines.length > 0 ?
+              lines.length + ' modified' :
               'Clean'
             );
 
         var branchName = branchInfo.slice(3).split('...', 1)[0];
+        if (branchName.includes("no branch")) {
+          branchName = outputs[2][0]
+        }
 
         console.log(
           style(dirname, 'gray') +
           style(path.basename(cwd), 'white') + pad(dirname + path.basename(cwd), pathMaxLen) + ' ' +
-          branchName + pad(branchName, 15) + ' ' +
-          style(modified, (lines.length-stashes.length > 0 ? 'red' : 'green')) + pad(modified, 14) +
+          branchName + pad(branchName, 32) + ' ' +
+          style(modified, (lines.length > 0 ? 'red' : 'green')) + pad(modified, 14) +
           behind + pad(behind, 14) +
           style(stashed, (stashes.length > 0 ? 'red' : 'green')) + pad(stashed, 14) +
           tags.map(function(s) { return '@' + s; }).join(' ')
@@ -89,3 +97,24 @@ module.exports = function(req, res, next) {
       });
   }
 };
+
+function divideArrays(lines) {
+    const resultArrays = [];
+    let currentArray = [];
+
+    for (const line of lines) {
+        if (line === "---") {
+            resultArrays.push(currentArray);
+            currentArray = [];
+        } else {
+            currentArray.push(line);
+        }
+    }
+
+    // Push the last array, even if it doesn't end with "----"
+    if (currentArray.length > 0) {
+        resultArrays.push(currentArray);
+    }
+
+    return resultArrays;
+}
